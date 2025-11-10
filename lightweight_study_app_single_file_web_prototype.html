@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lightweight Study App</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7fbff; color: #222; margin: 0; }
+    header { background: #4caf50; color: white; padding: 12px 16px; font-size: 18px; display:flex; align-items:center; justify-content:space-between; }
+    header .title { font-size: 22px; }
+    main { max-width: 980px; margin: 20px auto; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    h2 { margin-top: 0; }
+    button { background: #4caf50; color: white; border: none; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 15px; }
+    button:hover { background: #43a047; }
+    .ghost { background: #e8f5e9; color: #1b5e20; }
+    input, textarea, select { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+    .hidden { display: none; }
+    .list-item { padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .edit { background: #dbeafe; color: #1e3a8a; border: 1px solid #bfdbfe; }
+    .del { background: #ffe4e6; color: #9f1239; border: 1px solid #fecdd3; }
+    .badge { display:inline-block; padding:4px 8px; border-radius:999px; background:#eef7ff; color:#1e40af; font-size:12px; }
+    .question { font-size: 20px; margin: 8px 0; }
+    .choices button { margin: 6px 6px 0 0; }
+    .seq-list { list-style:none; padding:0; }
+    .seq-list li { display:flex; align-items:center; gap:8px; padding:6px 8px; margin:6px 0; background:#f7fbff; border:1px dashed #bcd7ff; border-radius:8px; }
+    .seq-list .txt { flex:1; }
+    .seq-list .mv { background:#fff; color:#1e3a8a; border:1px solid #bfdbfe; }
+    .muted { color:#6b7280; }
+
+    /* Quiz type-scoped visibility (prevents flicker & stray focus) */
+    #quiz.quiz-type-mc #tfBtns { display:none !important; }
+    #quiz.quiz-type-mc #seqBox { display:none !important; }
+    #quiz.quiz-type-tf #choices { display:none !important; }
+    #quiz.quiz-type-tf #seqBox { display:none !important; }
+    #quiz.quiz-type-seq #choices { display:none !important; }
+    #quiz.quiz-type-seq #tfBtns { display:none !important; }
+
+    /* Admin vs Quiz mode */
+    .admin-only { display:none; }
+    body.mode-admin .admin-only { display:block; }
+
+    /* PIN modal */
+    #pinModal { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; }
+    #pinModal .modal { background:white; padding:20px; border-radius:12px; text-align:center; width:320px; }
+  </style>
+</head>
+<body class="mode-quiz">
+  <header>
+    <div class="title">Science Quiz for Kids (Age 8)</div>
+    <div class="row">
+      <button id="toggleModeBtn" title="Switch between Admin and Quiz modes">Enter Admin Mode</button>
+    </div>
+  </header>
+  <main>
+    <!-- ADMIN SECTION: hidden in Quiz mode; PIN-protected toggle -->
+    <section class="admin-only">
+      <h2>Multiple Choice – Add / Edit</h2>
+      <input id="front" placeholder="Question" />
+      <input id="correct" placeholder="Correct Answer" />
+      <input id="wrong1" placeholder="Wrong Answer 1" />
+      <input id="wrong2" placeholder="Wrong Answer 2" />
+      <input id="wrong3" placeholder="Wrong Answer 3" />
+      <div class="row">
+        <button id="add">Add Question</button>
+        <button id="cancelEdit" class="ghost hidden">Cancel Edit</button>
+      </div>
+      <h3>Multiple Choice Bank</h3>
+      <div id="list"></div>
+
+      <hr style="margin:24px 0; border:none; border-top:1px solid #eee;" />
+
+      <h2>True / False – Add / Edit</h2>
+      <input id="tfStmt" placeholder="Statement (e.g., The Sun is a star.)" />
+      <div class="row">
+        <select id="tfIsTrue" style="max-width:200px">
+          <option value="true">True</option>
+          <option value="false">False</option>
+        </select>
+        <input id="tfExplain" placeholder="Optional explanation shown after answer" />
+      </div>
+      <div class="row">
+        <button id="addTF">Add True/False</button>
+        <button id="cancelEditTF" class="ghost hidden">Cancel Edit</button>
+      </div>
+      <h3>True / False Bank</h3>
+      <div id="tfList"></div>
+
+      <hr style="margin:24px 0; border:none; border-top:1px solid #eee;" />
+
+      <h2>Sequencing – Add / Edit</h2>
+      <input id="seqPrompt" placeholder="Prompt (e.g., Arrange the life cycle of a frog)" />
+      <textarea id="seqSteps" placeholder="Enter steps in CORRECT order, separated by commas (e.g., Egg, Tadpole, Froglet, Adult)"></textarea>
+      <div class="row">
+        <button id="addSeq">Add Sequencing Set</button>
+        <button id="cancelEditSeq" class="ghost hidden">Cancel Edit</button>
+      </div>
+      <h3>Sequencing Bank</h3>
+      <div id="seqList"></div>
+
+      <hr style="margin:24px 0; border:none; border-top:1px solid #eee;" />
+    </section>
+
+    <!-- QUIZ SECTION (visible in both modes) -->
+    <section>
+      <h2>Run Quiz</h2>
+      <div class="row" style="align-items:center;">
+        <label><input type="checkbox" id="incMc" checked> Include MC</label>
+        <label><input type="checkbox" id="incTf" checked> Include T/F</label>
+        <label><input type="checkbox" id="incSeq" checked> Include Sequencing</label>
+        <label>Max Questions <input type="number" id="maxQ" min="1" value="10" style="width:90px"></label>
+        <button id="startQuiz">Start Quiz</button>
+        <span class="badge" id="progress">0/0</span>
+        <span class="badge" id="score">Score: 0% (0/0)</span>
+      </div>
+
+      <div id="quiz" class="hidden">
+        <div id="qPrompt" class="question"></div>
+        <div id="choices" class="choices"></div>
+        <div id="tfBtns" class="row hidden">
+          <button id="btnTrue">True</button>
+          <button id="btnFalse">False</button>
+        </div>
+        <div id="seqBox" class="hidden">
+          <ul id="seqListQ" class="seq-list"></ul>
+          <button id="checkSeq" class="ghost">Check Order</button>
+        </div>
+        <div id="feedback" class="question" style="min-height:24px;color:#0b6e4f"></div>
+        <button id="nextQ" class="hidden">Next</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- PIN modal -->
+  <div id="pinModal">
+    <div class="modal">
+      <h3>Enter Admin PIN</h3>
+      <input type="password" id="pinInput" placeholder="PIN" />
+      <div class="row" style="justify-content:center;">
+        <button id="submitPin">Submit</button>
+        <button id="cancelPin" class="ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    // ---- Modes with PIN ----
+    const MODE_KEY='scienceQuizMode';
+    const PIN_KEY='scienceQuizAdminPin';
+
+    function setMode(mode){
+      const isAdmin = (mode==='admin');
+      document.body.classList.toggle('mode-admin', isAdmin);
+      localStorage.setItem(MODE_KEY, isAdmin ? 'admin' : 'quiz');
+      $('toggleModeBtn').textContent = isAdmin ? 'Switch to Quiz Mode' : 'Enter Admin Mode';
+    }
+
+    function enterAdmin(){
+      let saved = localStorage.getItem(PIN_KEY);
+      $('pinModal').style.display = 'flex';
+      $('submitPin').onclick = () => {
+        const entered = $('pinInput').value.trim();
+        if(saved){
+          if(entered!==saved){ alert('Incorrect PIN'); $('pinInput').value=''; return; }
+        } else {
+          if(!entered){ alert('Please enter a PIN to create one.'); return; }
+          localStorage.setItem(PIN_KEY, entered);
+        }
+        $('pinModal').style.display='none'; $('pinInput').value=''; setMode('admin');
+      };
+      $('cancelPin').onclick = () => { $('pinModal').style.display='none'; $('pinInput').value=''; };
+    }
+
+    $('toggleModeBtn').onclick = () => {
+      const isAdmin = document.body.classList.contains('mode-admin');
+      if(isAdmin) setMode('quiz'); else enterAdmin();
+    };
+
+    setMode(localStorage.getItem(MODE_KEY)||'quiz');
+
+    // ---- Data stores ----
+    let deck = JSON.parse(localStorage.getItem('scienceQuizDeckV2') || '[]');
+    let tfDeck = JSON.parse(localStorage.getItem('scienceQuizTFV1') || '[]');
+    let seqDeck = JSON.parse(localStorage.getItem('scienceQuizSequencesV1') || '[]');
+    let editIndex = -1, editTFIndex = -1, editSeqIndex = -1;
+
+    // Helpers
+    function shuffle(arr){ const a=arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+    function setInert(el, val){ if(!el) return; if(val){ el.setAttribute('inert',''); el.setAttribute('aria-hidden','true'); [...el.querySelectorAll('button,input,select,textarea,a')].forEach(n=>n.tabIndex=-1); } else { el.removeAttribute('inert'); el.removeAttribute('aria-hidden'); [...el.querySelectorAll('button,input,select,textarea,a')].forEach(n=>n.removeAttribute('tabindex')); } }
+    function setSectionVisibility(type){ const quizEl=$('quiz'); $('tfBtns')?.classList.remove('hidden'); $('choices')?.classList.remove('hidden'); $('seqBox')?.classList.remove('hidden'); quizEl.classList.remove('quiz-type-mc','quiz-type-tf','quiz-type-seq'); if(type==='mc') quizEl.classList.add('quiz-type-mc'); if(type==='tf') quizEl.classList.add('quiz-type-tf'); if(type==='seq') quizEl.classList.add('quiz-type-seq'); setInert($('tfBtns'), type!=='tf'); setInert($('choices'), type!=='mc'); setInert($('seqBox'), type!=='seq'); }
+
+    // Normalize MC deck so wrong is always an array
+    function normalizeDeck(){
+      deck = (deck||[]).map(q=>{
+        const front = q && q.front ? String(q.front) : '';
+        const correct = q && q.correct ? String(q.correct) : '';
+        let wrong = [];
+        if(Array.isArray(q && q.wrong)) wrong = q.wrong.filter(v=>!!v).map(String);
+        else if(typeof (q && q.wrong) === 'string') wrong = q.wrong.split(',').map(s=>s.trim()).filter(Boolean);
+        else if(q && q.wrong != null) wrong = [String(q.wrong)];
+        return { front, correct, wrong };
+      });
+      localStorage.setItem('scienceQuizDeckV2', JSON.stringify(deck));
+    }
+    normalizeDeck();
+
+    function saveDeck(){ localStorage.setItem('scienceQuizDeckV2', JSON.stringify(deck)); renderList(); }
+    function saveTF(){ localStorage.setItem('scienceQuizTFV1', JSON.stringify(tfDeck)); renderTFList(); }
+    function saveSeq(){ localStorage.setItem('scienceQuizSequencesV1', JSON.stringify(seqDeck)); renderSeqList(); }
+
+    // Render banks
+    function renderList(){ const list=$('list'); if(!list) return; if(!deck.length){ list.innerHTML='<p>No MC questions added yet.</p>'; return; } list.innerHTML = deck.map((q,i)=>`<div class="list-item"><div><b>${q.front}</b><br><small>Correct: ${q.correct}</small><br><small>Wrong: ${(q.wrong||[]).join(', ')}</small></div><div class="row"><button class="edit" onclick="editQuestion(${i})">✏️ Edit</button><button class="del" onclick="deleteQuestion(${i})">🗑 Delete</button></div></div>`).join(''); }
+    function renderTFList(){ const list=$('tfList'); if(!list) return; if(!tfDeck.length){ list.innerHTML='<p>No True/False items added yet.</p>'; return; } list.innerHTML = tfDeck.map((t,i)=>`<div class="list-item"><div><b>${t.stmt}</b><br><small>Answer: ${t.isTrue?'True':'False'}</small>${t.explain?`<br><small>Note: ${t.explain}</small>`:''}</div><div class="row"><button class="edit" onclick="editTF(${i})">✏️ Edit</button><button class="del" onclick="deleteTF(${i})">🗑 Delete</button></div></div>`).join(''); }
+    function renderSeqList(){ const list=$('seqList'); if(!list) return; if(!seqDeck.length){ list.innerHTML='<p>No sequencing sets added yet.</p>'; return; } list.innerHTML = seqDeck.map((s,i)=>`<div class="list-item"><div><b>${s.prompt}</b><br><small>Steps:</small> ${s.steps.join(' → ')}</div><div class="row"><button class="edit" onclick="editSeq(${i})">✏️ Edit</button><button class="del" onclick="deleteSeq(${i})">🗑 Delete</button></div></div>`).join(''); }
+
+    // MC actions
+    function addQuestion(){ const front=$('front').value.trim(); const correct=$('correct').value.trim(); const wrong=[$('wrong1').value,$('wrong2').value,$('wrong3').value].map(s=>s.trim()).filter(Boolean); if(!front||!correct){ alert('Please enter both a question and correct answer.'); return; } if(editIndex>=0){ deck[editIndex]={front,correct,wrong}; editIndex=-1; $('add').textContent='Add Question'; $('cancelEdit').classList.add('hidden'); } else { deck.push({front,correct,wrong}); } $('front').value=$('correct').value=$('wrong1').value=$('wrong2').value=$('wrong3').value=''; saveDeck(); }
+    function editQuestion(i){ const q=deck[i]; if(!q) return; const wrongArr=Array.isArray(q.wrong)?q.wrong:(q.wrong?(typeof q.wrong==='string'?q.wrong.split(',').map(s=>s.trim()).filter(Boolean):[q.wrong]):[]); $('front').value=q.front||''; $('correct').value=q.correct||''; $('wrong1').value=wrongArr[0]||''; $('wrong2').value=wrongArr[1]||''; $('wrong3').value=wrongArr[2]||''; $('add').textContent='Save Changes'; $('cancelEdit').classList.remove('hidden'); editIndex=i; document.getElementById('front').scrollIntoView({behavior:'smooth',block:'center'}); }
+    function cancelEdit(){ editIndex=-1; $('add').textContent='Add Question'; $('cancelEdit').classList.add('hidden'); $('front').value=$('correct').value=$('wrong1').value=$('wrong2').value=$('wrong3').value=''; }
+    function deleteQuestion(i){ if(confirm('Delete this question?')){ deck.splice(i,1); saveDeck(); } }
+
+    // TF actions
+    function addTF(){ const stmt=$('tfStmt').value.trim(); const isTrue=($('tfIsTrue').value==='true'); const explain=$('tfExplain').value.trim(); if(!stmt){ alert('Please enter a statement.'); return; } if(editTFIndex>=0){ tfDeck[editTFIndex]={stmt,isTrue,explain}; editTFIndex=-1; $('addTF').textContent='Add True/False'; $('cancelEditTF').classList.add('hidden'); } else { tfDeck.push({stmt,isTrue,explain}); } $('tfStmt').value=''; $('tfIsTrue').value='true'; $('tfExplain').value=''; saveTF(); }
+    function editTF(i){ const t=tfDeck[i]; $('tfStmt').value=t.stmt||''; $('tfIsTrue').value=t.isTrue?'true':'false'; $('tfExplain').value=t.explain||''; editTFIndex=i; $('addTF').textContent='Save T/F'; $('cancelEditTF').classList.remove('hidden'); document.getElementById('tfStmt').scrollIntoView({behavior:'smooth',block:'center'}); }
+    function cancelEditTF(){ editTFIndex=-1; $('addTF').textContent='Add True/False'; $('cancelEditTF').classList.add('hidden'); $('tfStmt').value=''; $('tfIsTrue').value='true'; $('tfExplain').value=''; }
+    function deleteTF(i){ if(confirm('Delete this True/False item?')){ tfDeck.splice(i,1); saveTF(); } }
+
+    // Sequencing actions
+    function addSeq(){ const prompt=$('seqPrompt').value.trim(); const stepsRaw=$('seqSteps').value.trim(); const steps=stepsRaw.split(',').map(s=>s.trim()).filter(Boolean); if(!prompt||steps.length<2){ alert('Enter a prompt and at least two steps (comma-separated).'); return; } if(editSeqIndex>=0){ seqDeck[editSeqIndex]={prompt,steps}; editSeqIndex=-1; $('addSeq').textContent='Add Sequencing Set'; $('cancelEditSeq').classList.add('hidden'); } else { seqDeck.push({prompt,steps}); } $('seqPrompt').value=''; $('seqSteps').value=''; saveSeq(); }
+    function editSeq(i){ const s=seqDeck[i]; $('seqPrompt').value=s.prompt||''; $('seqSteps').value=(s.steps||[]).join(', '); editSeqIndex=i; $('addSeq').textContent='Save Sequence'; $('cancelEditSeq').classList.remove('hidden'); document.getElementById('seqPrompt').scrollIntoView({behavior:'smooth',block:'center'}); }
+    function cancelEditSeq(){ editSeqIndex=-1; $('addSeq').textContent='Add Sequencing Set'; $('cancelEditSeq').classList.add('hidden'); $('seqPrompt').value=''; $('seqSteps').value=''; }
+    function deleteSeq(i){ if(confirm('Delete this sequencing set?')){ seqDeck.splice(i,1); saveSeq(); } }
+
+    // ---- Quiz runner ----
+    let quizOrder=[], qIndex=0, totalAnswered=0, totalCorrect=0, totalGradable=0, questionAnswered=false;
+    function updateScoreBadge(){ const pct=totalAnswered?Math.round(100*totalCorrect/totalAnswered):0; $('score').textContent=`Score: ${pct}% (${totalCorrect}/${totalGradable})`; }
+    function setProgress(){ $('progress').textContent=`${Math.min(qIndex+1,quizOrder.length)}/${quizOrder.length}`; }
+    function resetQuizState(){ qIndex=0; totalAnswered=0; totalCorrect=0; totalGradable=0; questionAnswered=false; updateScoreBadge(); setProgress(); $('feedback').textContent=''; $('nextQ').classList.add('hidden'); }
+    function buildQuiz(){ const incMc=$('incMc').checked, incTf=$('incTf').checked, incSeq=$('incSeq').checked; let items=[]; if(incMc) items=items.concat(deck.map(d=>({type:'mc',data:d}))); if(incTf) items=items.concat(tfDeck.map(t=>({type:'tf',data:t}))); if(incSeq) items=items.concat(seqDeck.map(s=>({type:'seq',data:s}))); items=shuffle(items); const max=parseInt(($('maxQ').value||'0'),10)||items.length; quizOrder=items.slice(0,Math.max(1,Math.min(max,items.length))); totalGradable=quizOrder.length; }
+    function startQuiz(){ buildQuiz(); if(!quizOrder.length){ alert('No questions available. Add items in the banks first.'); return; } resetQuizState(); $('quiz').classList.remove('hidden'); showQ(); }
+    function lockChoices(){ [...$('choices').querySelectorAll('button')].forEach(b=>b.disabled=true); [...$('tfBtns').querySelectorAll('button')].forEach(b=>b.disabled=true); [...$('seqListQ').querySelectorAll('button')].forEach(b=>b.disabled=true); $('nextQ').classList.remove('hidden'); }
+
+    function showQ(){
+      setProgress();
+      // Ensure reusable T/F buttons get re-enabled each question
+      const tTrue=$('btnTrue'), tFalse=$('btnFalse'); if(tTrue) tTrue.disabled=false; if(tFalse) tFalse.disabled=false;
+      questionAnswered=false; $('feedback').textContent=''; $('nextQ').classList.add('hidden'); $('choices').innerHTML='';
+      const q=quizOrder[qIndex]; if(!q) return;
+
+      if(q.type==='mc'){
+        setSectionVisibility('mc');
+        const card=q.data; $('qPrompt').textContent=card.front; const wrongs=Array.isArray(card.wrong)?card.wrong:[]; let opts=[card.correct,...wrongs].filter(Boolean); opts=opts.filter((v,i,a)=>a.indexOf(v)===i);
+        if(opts.length<2){ $('choices').innerHTML='<span class="muted">(Not enough options – add wrong answers in the MC bank)</span>'; $('feedback').textContent=`Answer: ${card.correct}`; $('nextQ').classList.remove('hidden'); return; }
+        shuffle(opts).forEach(opt=>{ const b=document.createElement('button'); b.textContent=opt; b.onclick=()=>{ if(questionAnswered) return; questionAnswered=true; totalAnswered++; const ok=(opt===card.correct); if(ok) totalCorrect++; $('feedback').textContent= ok? '✅ Correct!' : `❌ Answer: ${card.correct}`; updateScoreBadge(); lockChoices(); }; $('choices').appendChild(b); });
+      }
+      else if(q.type==='tf'){
+        setSectionVisibility('tf');
+        $('btnTrue').disabled=false; $('btnFalse').disabled=false;
+        const t=q.data; $('qPrompt').textContent=t.stmt; const handler=(ans)=>{ if(questionAnswered) return; questionAnswered=true; totalAnswered++; const ok=(!!t.isTrue)===ans; if(ok) totalCorrect++; $('feedback').textContent = ok? '✅ Correct!' : `❌ Correct: ${t.isTrue? 'True':'False'}${t.explain? ' — '+t.explain:''}`; updateScoreBadge(); lockChoices(); };
+        $('btnTrue').onclick=()=>handler(true); $('btnFalse').onclick=()=>handler(false);
+      }
+      else if(q.type==='seq'){
+        setSectionVisibility('seq');
+        const s=q.data; $('qPrompt').textContent=s.prompt; const scrambled=shuffle(s.steps); $('seqListQ').innerHTML='';
+        scrambled.forEach(step=>{ const li=document.createElement('li'); li.innerHTML=`<span class="txt">${step}</span>`; const up=document.createElement('button'); up.textContent='↑'; up.className='mv'; const dn=document.createElement('button'); dn.textContent='↓'; dn.className='mv'; up.onclick=()=>{ if(questionAnswered) return; const i=[...$('seqListQ').children].indexOf(li); if(i>0) $('seqListQ').insertBefore(li, $('seqListQ').children[i-1]); }; dn.onclick=()=>{ if(questionAnswered) return; const i=[...$('seqListQ').children].indexOf(li); const nodes=$('seqListQ').children; if(i<nodes.length-1) $('seqListQ').insertBefore(nodes[i+1], li); }; li.prepend(up); li.appendChild(dn); $('seqListQ').appendChild(li); });
+        $('checkSeq').onclick=()=>{ if(questionAnswered) return; questionAnswered=true; totalAnswered++; const user=[...$('seqListQ').querySelectorAll('.txt')].map(n=>n.textContent.trim()); const correct=s.steps; const ok=user.length===correct.length && user.every((v,i)=>v===correct[i]); if(ok) totalCorrect++; $('feedback').textContent= ok? '✅ Perfect order!' : `❌ Correct: ${correct.join(' → ')}`; updateScoreBadge(); lockChoices(); };
+      }
+    }
+
+    // Wire up controls
+    $('add').onclick = addQuestion; $('cancelEdit').onclick = cancelEdit;
+    $('addTF').onclick = addTF; $('cancelEditTF').onclick = cancelEditTF;
+    $('addSeq').onclick = addSeq; $('cancelEditSeq').onclick = cancelEditSeq;
+    $('startQuiz').onclick = startQuiz;
+    $('nextQ').onclick = ()=>{ qIndex++; if(qIndex>=quizOrder.length){ const pct=totalAnswered?Math.round(100*totalCorrect/totalAnswered):0; alert(`All done!\nFinal score: ${pct}% (${totalCorrect}/${totalGradable})`); $('quiz').classList.add('hidden'); return; } showQ(); };
+
+    // Initial render (only visible in Admin mode, but safe to render anytime)
+    renderList(); renderTFList(); renderSeqList();
+  </script>
+</body>
+</html>
